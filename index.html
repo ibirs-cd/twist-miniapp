@@ -361,23 +361,32 @@
     }
 
     const params = new URLSearchParams(window.location.search);
-    const giveawayId = params.get("giveaway_id");
-
     const button = document.getElementById("checkButton");
     const message = document.getElementById("message");
 
-    if (!giveawayId || !/^\d+$/.test(giveawayId)) {
+    // Поддерживаем обычную ссылку и запуск через Telegram startapp.
+    const telegramStartParam =
+      tg && tg.initDataUnsafe
+        ? tg.initDataUnsafe.start_param
+        : null;
+
+    const giveawayId =
+      params.get("giveaway_id") || telegramStartParam;
+
+    if (!giveawayId || !/^\d+$/.test(String(giveawayId))) {
       message.textContent =
         "Открой Mini App через кнопку «Участвовать» в публикации розыгрыша.";
     } else {
       message.textContent =
         "Розыгрыш №" + giveawayId +
-        ". Интерфейс загружен. Проверка подписки пока не подключена.";
+        ". Приложение открыто. Проверка подписки пока не подключена.";
+
+      button.disabled = false;
     }
 
     button.addEventListener("click", function () {
       message.textContent =
-        "Проверка пока не подключена. Следующим этапом свяжем приложение с ботом.";
+        "Проверка подписки ещё не подключена. Следующим этапом свяжем приложение с сервером бота.";
     });
   </script>
 </body>
