@@ -6,7 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#101114">
   <title>Twist Giveaway</title>
-
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
   <style>
@@ -101,6 +100,7 @@
       background: #7958ff18;
       right: -60px;
       top: -60px;
+      pointer-events: none;
     }
 
     .hero-label {
@@ -133,6 +133,7 @@
       bottom: 17px;
       font-size: 57px;
       filter: drop-shadow(0 8px 12px #0005);
+      pointer-events: none;
     }
 
     .section-title {
@@ -153,6 +154,7 @@
       background: #24232e;
       border-radius: 10px;
       font-size: 15px;
+      flex-shrink: 0;
     }
 
     .section-note {
@@ -205,9 +207,18 @@
       font-size: 11px;
     }
 
+    .channel-link {
+      display: inline-block;
+      margin-top: 8px;
+      color: #a995ff;
+      font-size: 12px;
+      text-decoration: none;
+    }
+
     .channel-status {
       color: var(--muted);
       font-size: 18px;
+      flex-shrink: 0;
     }
 
     .empty {
@@ -254,6 +265,7 @@
       font-size: 14px;
       font-weight: 750;
       cursor: pointer;
+      transition: transform 0.15s, opacity 0.15s;
     }
 
     .button:active {
@@ -272,6 +284,15 @@
       text-align: center;
       color: var(--muted);
       overflow-wrap: anywhere;
+      white-space: pre-line;
+    }
+
+    .message.success {
+      color: var(--green);
+    }
+
+    .message.error {
+      color: #ff7777;
     }
 
     .footer {
@@ -290,24 +311,19 @@
 
 <body>
   <main class="app">
-
     <header class="header">
       <div class="logo">🎁</div>
-
       <div>
         <div class="brand">TWIST GIVEAWAY</div>
         <div class="subtitle">Розыгрыши и призы</div>
       </div>
-
       <div class="badge">MINI APP</div>
     </header>
 
     <section class="hero">
       <div class="hero-label">ТВОЙ ШАНС НА ПРИЗ</div>
       <h1>Участвуй.<br>Побеждай.</h1>
-      <p>
-        Выполни условия розыгрыша и получи шанс стать победителем.
-      </p>
+      <p>Выполни условия розыгрыша и получи шанс стать победителем.</p>
       <div class="hero-gift">🎁</div>
     </section>
 
@@ -323,13 +339,12 @@
     <section id="channels">
       <div class="card empty">
         <div class="empty-icon">📡</div>
-        <div>Список каналов появится после подключения бота.</div>
+        <div>Загружаем каналы розыгрыша...</div>
       </div>
     </section>
 
     <section class="join-card">
       <div class="join-heading">🏆 Участие в розыгрыше</div>
-
       <p class="join-description">
         Подпишись на обязательные каналы. Затем проверь подписку,
         чтобы бот мог подтвердить твоё участие.
@@ -339,55 +354,249 @@
         Проверить подписку
       </button>
 
-      <div class="message" id="message">
-        Подключение к системе розыгрышей будет настроено следующим этапом.
-      </div>
+      <div class="message" id="message">Подключение к системе розыгрышей...</div>
     </section>
 
     <footer class="footer">
       Powered by <span>Twist Giveaway</span>
     </footer>
-
   </main>
 
   <script>
-    const tg = window.Telegram && window.Telegram.WebApp;
+    (() => {
+      const API_BASE = "https://twistgiveawaybot.fadehost.app";
 
-    if (tg) {
-      tg.ready();
-      tg.expand();
-      tg.setHeaderColor("#101114");
-      tg.setBackgroundColor("#101114");
-    }
+      const tg = window.Telegram?.WebApp;
+      const params = new URLSearchParams(window.location.search);
 
-    const params = new URLSearchParams(window.location.search);
-    const button = document.getElementById("checkButton");
-    const message = document.getElementById("message");
+      const button = document.getElementById("checkButton");
+      const message = document.getElementById("message");
+      const channelsContainer = document.getElementById("channels");
 
-    // Поддерживаем обычную ссылку и запуск через Telegram startapp.
-    const telegramStartParam =
-      tg && tg.initDataUnsafe
-        ? tg.initDataUnsafe.start_param
-        : null;
+      if (tg) {
+        tg.ready();
+        tg.expand();
+        tg.setHeaderColor("#101114");
+        tg.setBackgroundColor("#101114");
+      }
 
-    const giveawayId =
-      params.get("giveaway_id") || telegramStartParam;
+      // start_param используется только для выбора розыгрыша.
+      // Для авторизации сервер проверяет tg.initData.
+      const startParam = tg?.initDataUnsafe?.start_param || null;
+      const giveawayId = params.get("giveaway_id") || startParam;
+      const initData = tg?.initData || "";
 
-    if (!giveawayId || !/^\d+$/.test(String(giveawayId))) {
-      message.textContent =
-        "Открой Mini App через кнопку «Участвовать» в публикации розыгрыша.";
-    } else {
-      message.textContent =
-        "Розыгрыш №" + giveawayId +
-        ". Приложение открыто. Проверка подписки пока не подключена.";
+      let giveawayLoaded = false;
+      let isBusy = false;
 
-      button.disabled = false;
-    }
+      function setMessage(text, type = "") {
+        message.textContent = text;
+        message.className = "message";
 
-    button.addEventListener("click", function () {
-      message.textContent =
-        "Проверка подписки ещё не подключена. Следующим этапом свяжем приложение с сервером бота.";
-    });
+        if (type === "success") {
+          message.classList.add("success");
+        } else if (type === "error") {
+          message.classList.add("error");
+        }
+      }
+
+      function showEmpty(text) {
+        channelsContainer.replaceChildren();
+
+        const card = document.createElement("div");
+        card.className = "card empty";
+
+        const icon = document.createElement("div");
+        icon.className = "empty-icon";
+        icon.textContent = "📡";
+
+        const label = document.createElement("div");
+        label.textContent = text;
+
+        card.append(icon, label);
+        channelsContainer.append(card);
+      }
+
+      async function apiRequest(path, options = {}) {
+        let response;
+
+        try {
+          response = await fetch(API_BASE + path, {
+            method: options.method || "GET",
+            headers: {
+              "X-Telegram-Init-Data": initData,
+              ...(options.headers || {})
+            },
+            body: options.body
+          });
+        } catch {
+          throw new Error(
+            "Не удалось связаться с сервером. Проверь подключение или попробуй позже."
+          );
+        }
+
+        let data;
+
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error(
+            "Сервер вернул некорректный ответ. Проверь, запущен ли API на FadeHost."
+          );
+        }
+
+        if (!response.ok) {
+          const error = new Error(
+            data.error || "Ошибка запроса к серверу."
+          );
+          error.status = response.status;
+          error.data = data;
+          throw error;
+        }
+
+        return data;
+      }
+
+      function renderChannels(channels) {
+        channelsContainer.replaceChildren();
+
+        if (!channels || channels.length === 0) {
+          showEmpty("Для этого розыгрыша обязательные каналы не указаны.");
+          return;
+        }
+
+        channels.forEach(channel => {
+          const card = document.createElement("div");
+          card.className = "card";
+
+          const row = document.createElement("div");
+          row.className = "channel";
+
+          const icon = document.createElement("div");
+          icon.className = "channel-icon";
+          icon.textContent = "📢";
+
+          const info = document.createElement("div");
+          info.className = "channel-info";
+
+          const name = document.createElement("div");
+          name.className = "channel-name";
+          name.textContent = channel.title || "Канал";
+
+          const description = document.createElement("div");
+          description.className = "channel-description";
+          description.textContent = "Обязательная подписка";
+
+          info.append(name, description);
+
+          if (channel.url) {
+            const link = document.createElement("a");
+            link.className = "channel-link";
+            link.href = channel.url;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = "Открыть канал ↗";
+            info.append(link);
+          }
+
+          const status = document.createElement("div");
+          status.className = "channel-status";
+          status.textContent = "○";
+          status.setAttribute("aria-label", "Подписка не проверена");
+
+          row.append(icon, info, status);
+          card.append(row);
+          channelsContainer.append(card);
+        });
+      }
+
+      async function loadGiveaway() {
+        if (!giveawayId || !/^\d+$/.test(String(giveawayId))) {
+          showEmpty(
+            "Открой Mini App через кнопку «Участвовать» в публикации розыгрыша."
+          );
+          setMessage(
+            "Не удалось определить номер розыгрыша.",
+            "error"
+          );
+          return;
+        }
+
+        if (!initData) {
+          showEmpty("Открой Mini App внутри Telegram.");
+          setMessage(
+            "Для участия открой приложение через Telegram, а не в обычном браузере.",
+            "error"
+          );
+          return;
+        }
+
+        try {
+          const data = await apiRequest(
+            "/api/giveaways/" + encodeURIComponent(giveawayId)
+          );
+
+          giveawayLoaded = true;
+          renderChannels(data.channels || []);
+
+          setMessage(
+            "Розыгрыш №" + data.id +
+            ". Подпишись на каналы и нажми кнопку ниже."
+          );
+
+          button.disabled = false;
+        } catch (error) {
+          showEmpty("Не удалось загрузить каналы.");
+
+          setMessage(error.message, "error");
+          button.disabled = true;
+        }
+      }
+
+      button.addEventListener("click", async () => {
+        if (!giveawayLoaded || isBusy) return;
+
+        isBusy = true;
+        button.disabled = true;
+        button.textContent = "Проверяем...";
+        setMessage("Проверяем подписки на каналы...");
+
+        try {
+          const data = await apiRequest(
+            "/api/giveaways/" +
+              encodeURIComponent(giveawayId) +
+              "/join",
+            { method: "POST" }
+          );
+
+          setMessage(
+            data.message || "Ты успешно участвуешь в розыгрыше!",
+            "success"
+          );
+
+          button.textContent = data.already_joined
+            ? "Ты уже участвуешь ✓"
+            : "Участие подтверждено ✓";
+
+        } catch (error) {
+          setMessage(error.message, "error");
+
+          if (error.status === 403 && error.data?.not_subscribed) {
+            button.textContent = "Проверить подписку ещё раз";
+            button.disabled = false;
+          } else if (error.status === 401) {
+            button.textContent = "Открой приложение заново";
+          } else {
+            button.textContent = "Повторить проверку";
+            button.disabled = false;
+          }
+        } finally {
+          isBusy = false;
+        }
+      });
+
+      loadGiveaway();
+    })();
   </script>
 </body>
 </html>
